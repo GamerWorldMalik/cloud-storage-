@@ -1,0 +1,7 @@
+{
+  "name": "CloudVault Storage",
+  "description": "Personal and collaborative cloud storage powered by Google Drive with referral storage expansion.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
