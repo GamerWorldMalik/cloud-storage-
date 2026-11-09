@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   initAuth,
   googleSignIn,
@@ -21,6 +21,8 @@ import {
   BONUS_PER_REFERRAL_BYTES,
   recordGenuineReferral,
   formatStorageSize,
+  fetchLiveUserQuota,
+  syncUserToServer,
 } from './services/storageQuotaService';
 import {
   openCloudDB,
@@ -48,6 +50,7 @@ import { UpgradePlanModal } from './components/UpgradePlanModal';
 import { ShareFileModal } from './components/ShareFileModal';
 import { RenameFileModal } from './components/RenameFileModal';
 import { PublicFileViewer } from './components/PublicFileViewer';
+import { AdminControlPanelModal, ADMIN_AUTHORIZED_EMAILS } from './components/AdminControlPanelModal';
 
 import {
   Plus,
@@ -61,6 +64,7 @@ import {
   Archive,
   Star,
   Zap,
+  ShieldCheck,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -109,6 +113,7 @@ export default function App() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [previewFile, setPreviewFile] = useState<CloudFile | null>(null);
   const [shareCandidate, setShareCandidate] = useState<CloudFile | null>(null);
   const [renameCandidate, setRenameCandidate] = useState<CloudFile | null>(null);
@@ -124,10 +129,18 @@ export default function App() {
     }
   }, []);
 
-  // Update Quota for user
-  const updateQuotaForUser = useCallback((userId: string, currentFiles: CloudFile[]) => {
-    const updated = calculateUserQuota(userId, currentFiles);
+  // Keep stable refs to avoid recreating callbacks or re-triggering effects
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  // Update Quota for user with live server sync (stable callback, does not recreate on user identity change)
+  const updateQuotaForUser = useCallback(async (userId: string, currentFiles: CloudFile[]) => {
+    const updated = await fetchLiveUserQuota(userId, currentFiles);
     setQuota(updated);
+    const stored = getStoredUser();
+    if (stored) {
+      syncUserToServer(stored.uid, stored.email, stored.displayName, stored.photoURL, updated.usedBytes);
+    }
   }, []);
 
   // Permanent load files for user
@@ -136,7 +149,7 @@ export default function App() {
     try {
       const userFiles = await loadPermanentUserFiles(currentUserId);
       setFiles(userFiles);
-      updateQuotaForUser(currentUserId, userFiles);
+      await updateQuotaForUser(currentUserId, userFiles);
     } catch (err) {
       console.error('Error loading files:', err);
     } finally {
@@ -144,50 +157,70 @@ export default function App() {
     }
   }, [updateQuotaForUser]);
 
-  // Initial load if user is stored
-  useEffect(() => {
-    if (user) {
-      loadFiles(user.uid);
-    }
-  }, [user, loadFiles]);
+  const loadFilesRef = useRef(loadFiles);
+  loadFilesRef.current = loadFiles;
 
   // Process genuine referral if a friend visited via a referral link
-  const processReferral = useCallback((newUserId: string, newUserName: string, newUserEmail: string) => {
+  const processReferral = useCallback(async (newUserId: string, newUserName: string, newUserEmail: string) => {
     const referrerId = sessionStorage.getItem('cloudvault_referrer');
     if (referrerId && referrerId !== newUserId) {
-      const res = recordGenuineReferral(referrerId, newUserId, newUserName, newUserEmail);
+      const res = await recordGenuineReferral(referrerId, newUserId, newUserName, newUserEmail);
       if (res.success) {
         sessionStorage.removeItem('cloudvault_referrer');
       }
     }
   }, []);
 
-  // Listen for real-time referral updates (e.g. when a friend registers in another tab/browser)
+  const processReferralRef = useRef(processReferral);
+  processReferralRef.current = processReferral;
+
+  // Initial load if user is stored (only runs when the actual user ID changes, NOT on every render)
+  const lastLoadedUidRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (user?.uid && lastLoadedUidRef.current !== user.uid) {
+      lastLoadedUidRef.current = user.uid;
+      loadFilesRef.current(user.uid);
+    }
+  }, [user?.uid]);
+
+  // Listen for real-time referral and purchase updates
   useEffect(() => {
     const handleSync = () => {
-      if (user) {
-        updateQuotaForUser(user.uid, files);
+      const stored = getStoredUser();
+      if (stored?.uid) {
+        updateQuotaForUser(stored.uid, filesRef.current);
       }
     };
 
     window.addEventListener('cloudvault_referral_update', handleSync);
+    window.addEventListener('cloudvault_purchase_update', handleSync);
     window.addEventListener('storage', handleSync);
 
     return () => {
       window.removeEventListener('cloudvault_referral_update', handleSync);
+      window.removeEventListener('cloudvault_purchase_update', handleSync);
       window.removeEventListener('storage', handleSync);
     };
-  }, [user, files, updateQuotaForUser]);
+  }, [updateQuotaForUser]);
 
-  // Auth Initialization Listener
+  // Auth Initialization Listener: Attached ONCE on mount with []
   useEffect(() => {
     const unsubscribe = initAuth(
       (currentUser) => {
-        setUser(currentUser);
+        setUser((prev) => {
+          if (
+            prev?.uid === currentUser.uid &&
+            prev?.email === currentUser.email &&
+            prev?.displayName === currentUser.displayName
+          ) {
+            return prev;
+          }
+          return currentUser;
+        });
         setStoredUser(currentUser);
         setNeedsAuth(false);
-        loadFiles(currentUser.uid);
-        processReferral(
+        loadFilesRef.current(currentUser.uid);
+        processReferralRef.current(
           currentUser.uid,
           currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Real Friend'),
           currentUser.email || ''
@@ -201,7 +234,7 @@ export default function App() {
     );
 
     return () => unsubscribe();
-  }, [loadFiles, processReferral]);
+  }, []);
 
   // Google Sign In (NO test permissions needed!)
   const handleGoogleLogin = async () => {
@@ -284,20 +317,19 @@ export default function App() {
     // "upload limite storage limit er 20% thakbe jmn 100 mb te 20 mb"
     const maxSingleBytes = quota.maxSingleFileBytes || Math.floor(quota.totalAllowedBytes * 0.2);
     if (file.size > maxSingleBytes) {
-      alert(
+      throw new Error(
         lang === 'bn'
           ? `ফাইল সাইজ বেশি বড়! নিয়মানুযায়ী আপনার মোট স্টোরেজের সর্বোচ্চ ২০% (${formatStorageSize(
               maxSingleBytes
             )}) সাইজের ফাইল একবারে আপলোড করতে পারবেন।`
           : `File exceeds 20% single-file upload limit of ${formatStorageSize(maxSingleBytes)}.`
       );
-      return;
     }
 
     // Rule 2: Total storage quota check
     // "kew jeno tar storage limit er besi upload korte na pare"
     if (file.size + quota.usedBytes > quota.totalAllowedBytes) {
-      alert(
+      throw new Error(
         lang === 'bn'
           ? `স্টোরেজ লিমিট পূর্ণ! আপনার মোট ${formatStorageSize(
               quota.totalAllowedBytes
@@ -306,7 +338,6 @@ export default function App() {
             )} খালি আছে।`
           : `Storage quota exceeded!`
       );
-      return;
     }
 
     const createdRecord = await savePermanentFile(user.uid, file);
@@ -469,6 +500,7 @@ export default function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onOpenInviteModal={() => setIsInviteModalOpen(true)}
+        onOpenAdminPanel={() => setIsAdminModalOpen(true)}
         onLogin={handleGoogleLogin}
         onLogout={handleLogout}
         isLoggingIn={isLoggingIn}
@@ -487,6 +519,38 @@ export default function App() {
         />
       ) : (
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Admin Quick Launch Banner for authorized admins */}
+          {user?.email && ADMIN_AUTHORIZED_EMAILS.includes(user.email.toLowerCase().trim()) && (
+            <div className="mb-5 p-3.5 rounded-2xl bg-gradient-to-r from-gray-900 via-slate-800 to-gray-900 text-white flex flex-col sm:flex-row items-center justify-between gap-3 border border-amber-400/30 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-400/40 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-amber-300">
+                      {lang === 'bn' ? 'অ্যাডমিন এক্সেস সক্রিয়' : 'Admin Mode Active'}
+                    </span>
+                    <span className="text-[10px] bg-amber-400/10 text-amber-200 px-2 py-0.5 rounded-full font-mono">
+                      {user.email}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-300 mt-0.5">
+                    {lang === 'bn'
+                      ? 'সকল গ্রাহকদের জিমেইল, প্রিমিয়াম/ফ্রি স্টোরেজ ব্যবহার এবং মোট পুল স্টোরেজের হিসাব দেখতে কন্ট্রোল প্যানেল খুলুন।'
+                      : 'View customer accounts, storage allocations, and pool capacity in the control panel.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAdminModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-gray-950 font-black text-xs shadow-sm transition-all cursor-pointer shrink-0"
+              >
+                {lang === 'bn' ? 'কন্ট্রোল প্যানেল খুলুন' : 'Open Control Panel'}
+              </button>
+            </div>
+          )}
+
           {/* Storage Quota Card (Exact MB/GB, 20% limit indicator, Category Breakdown, Upgrade CTA) */}
           <StorageStatsCard
             quota={quota}
@@ -663,6 +727,14 @@ export default function App() {
         onDeleteRequest={(f) => setDeleteCandidate(f)}
         onShare={(f) => setShareCandidate(f)}
         onRename={(f) => setRenameCandidate(f)}
+        lang={lang}
+      />
+
+      {/* Admin Control Panel Modal (Strictly restricted to gamergigamc4@gmail.com and cloudgamer955@gmail.com) */}
+      <AdminControlPanelModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+        adminEmail={user?.email || ''}
         lang={lang}
       />
     </div>

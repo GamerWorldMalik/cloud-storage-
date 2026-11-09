@@ -84,13 +84,14 @@ export const saveUserReferrals = (userId: string, referrals: ReferralUser[]) => 
 
 /**
  * Validates and records a REAL referral when a genuine friend creates an account or signs in via an invite link.
+ * Syncs directly to server so the referrer gets +0.05 GB across all devices.
  */
-export const recordGenuineReferral = (
+export const recordGenuineReferral = async (
   referrerId: string,
   newUserId: string,
   newUserName: string,
   newUserEmail: string
-): { success: boolean; reason?: string } => {
+): Promise<{ success: boolean; reason?: string }> => {
   if (!referrerId || !newUserId) {
     return { success: false, reason: 'Invalid parameters' };
   }
@@ -100,7 +101,29 @@ export const recordGenuineReferral = (
     return { success: false, reason: 'Self-referral is not allowed' };
   }
 
-  // 2. Check if this friend has already accepted any referral previously
+  // Attempt server-side credit first
+  try {
+    const res = await fetch('/api/referrals/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        referrerId,
+        friendUid: newUserId,
+        friendName: newUserName,
+        friendEmail: newUserEmail,
+      }),
+    });
+
+    const data = await res.json();
+    if (data.success) {
+      window.dispatchEvent(new Event('cloudvault_referral_update'));
+      return { success: true };
+    }
+  } catch (err) {
+    console.warn('Server referral claim error, trying local fallback:', err);
+  }
+
+  // Local fallback
   try {
     const globalUsedRaw = localStorage.getItem(GLOBAL_USED_REFERRALS_KEY);
     const globalUsed: string[] = globalUsedRaw ? JSON.parse(globalUsedRaw) : [];
@@ -187,16 +210,17 @@ export const isPlanOnCooldown = (
 
 /**
  * Verifies real payment transaction and grants storage pack.
- * Strictly prevents fake submissions and duplicate transaction IDs!
+ * Syncs directly with server so storage increases immediately!
  */
-export const verifyAndApplyPayment = (
+export const verifyAndApplyPayment = async (
   userId: string,
   plan: UpgradePlan,
   paymentMethod: 'bkash' | 'nagad' | 'rocket',
   senderPhone: string,
-  transactionId: string
-): { success: boolean; error?: string } => {
-  // 1. Check 30-day monthly limit
+  transactionId: string,
+  userEmail?: string
+): Promise<{ success: boolean; error?: string }> => {
+  // 1. Check 30-day monthly limit locally
   const cooldownCheck = isPlanOnCooldown(userId, plan.id);
   if (cooldownCheck.onCooldown) {
     return {
@@ -224,20 +248,34 @@ export const verifyAndApplyPayment = (
     };
   }
 
-  // 4. Anti-Fraud Uniqueness Check: TrxID cannot be used more than once across the entire system!
+  // 4. Send to server to record purchase
   try {
-    const globalTrxRaw = localStorage.getItem(GLOBAL_VERIFIED_TRX_KEY);
-    const globalTrx: string[] = globalTrxRaw ? JSON.parse(globalTrxRaw) : [];
+    const res = await fetch('/api/purchases/record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        userEmail: userEmail || `${userId.slice(0, 8)}@vault.user`,
+        planId: plan.id,
+        planName: plan.name,
+        priceTaka: plan.priceTaka,
+        storageBytes: plan.storageBytes,
+        paymentMethod,
+        senderPhone: cleanPhone,
+        transactionId: cleanTrx,
+      }),
+    });
 
-    if (globalTrx.includes(cleanTrx)) {
+    const data = await res.json();
+    if (!res.ok || !data.success) {
       return {
         success: false,
-        error: 'এই ট্রানজেকশন আইডিটি ইতোমধ্যে ব্যবহার করা হয়েছে! দয়া করে নতুন সঠিক পেমেন্ট করে TrxID প্রদান করুন।',
+        error: data.error || 'পেমেন্ট ভেরিফিকেশন ব্যর্থ হয়েছে।',
       };
     }
 
-    // 5. Save verified purchase record
-    const newRecord: PurchaseRecord = {
+    // Save locally as well
+    const newRecord: PurchaseRecord = data.purchase || {
       id: `trx_${Date.now()}_${cleanTrx}`,
       planId: plan.id,
       planName: plan.name,
@@ -254,13 +292,11 @@ export const verifyAndApplyPayment = (
     userPurchases.push(newRecord);
     localStorage.setItem(getUserPurchasesKey(userId), JSON.stringify(userPurchases));
 
-    // Register TrxID in global ledger
-    globalTrx.push(cleanTrx);
-    localStorage.setItem(GLOBAL_VERIFIED_TRX_KEY, JSON.stringify(globalTrx));
-
+    window.dispatchEvent(new Event('cloudvault_purchase_update'));
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Payment verification failed' };
+    console.error('Network error during purchase verification:', err);
+    return { success: false, error: 'সার্ভারের সাথে যোগাযোগ করতে ব্যর্থ হয়েছে।' };
   }
 };
 
@@ -329,4 +365,53 @@ export const calculateUserQuota = (userId: string, files: CloudFile[]): UserStor
     maxSingleFileBytes,
     categoryBreakdown,
   };
+};
+
+/**
+ * Fetches live server quota for user and syncs local cache
+ */
+export const fetchLiveUserQuota = async (userId: string, files: CloudFile[]): Promise<UserStorageQuota> => {
+  try {
+    const res = await fetch(`/api/quota/${userId}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.referrals)) {
+        localStorage.setItem(getRealReferralListKey(userId), JSON.stringify(data.referrals));
+      }
+      if (Array.isArray(data.purchases)) {
+        localStorage.setItem(getUserPurchasesKey(userId), JSON.stringify(data.purchases));
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch server quota, using local calculation:', err);
+  }
+
+  return calculateUserQuota(userId, files);
+};
+
+/**
+ * Sync user to server so they appear in Admin Control Panel
+ */
+export const syncUserToServer = async (
+  uid: string,
+  email: string | null,
+  displayName: string | null,
+  photoURL: string | null | undefined,
+  usedBytes: number
+) => {
+  try {
+    await fetch('/api/users/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid,
+        email,
+        displayName,
+        photoURL,
+        usedBytes,
+      }),
+    });
+  } catch (e) {
+    console.warn('User server sync deferred:', e);
+  }
 };

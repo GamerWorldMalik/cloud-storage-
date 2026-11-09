@@ -15,6 +15,7 @@ export interface CloudFile {
   dataUrl?: string; // persistent Base64 / thumbnail
   textContent?: string; // cached text content for txt/code files
   fileExtension?: string;
+  cloudUrl?: string; // Real permanent Catbox cloud URL
   userId?: string;
 }
 

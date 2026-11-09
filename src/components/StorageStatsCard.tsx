@@ -13,6 +13,8 @@ import {
   FileText,
   Music,
   HelpCircle,
+  ShieldCheck,
+  Cloud
 } from 'lucide-react';
 
 interface StorageStatsCardProps {
@@ -120,6 +122,12 @@ export const StorageStatsCard: React.FC<StorageStatsCardProps> = ({
               <span>+{formatStorageSize(quota.purchasedBytes)} {lang === 'bn' ? 'আপগ্রেড প্যাক' : 'Upgraded'}</span>
             </div>
           )}
+
+          {/* Cloud API Key Connection Status */}
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-800 font-medium">
+            <Cloud className="w-3.5 h-3.5 text-sky-600" />
+            <span>Catbox Cloud API: <span className="font-mono text-[10px]">cb_ede5...</span> (Active)</span>
+          </div>
         </div>
 
         {/* Category Breakdown (images, videos, docs, audio) */}

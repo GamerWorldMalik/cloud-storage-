@@ -1,6 +1,6 @@
 {
   "name": "CloudVault Storage",
-  "description": "Personal and collaborative cloud storage powered by Google Drive with referral storage expansion.",
+  "description": "Personal and collaborative cloud storage with referral bonuses and expanded Catbox cloud storage API integration.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -14,7 +14,9 @@ import {
   Edit3,
   Copy,
   Check,
-  Play
+  Play,
+  ExternalLink,
+  Globe
 } from 'lucide-react';
 import { getFileIcon, getExtensionBadge } from './FileList';
 
@@ -136,24 +138,24 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
         <div className="flex-1 my-4 bg-gray-50 rounded-2xl flex items-center justify-center overflow-hidden min-h-[240px] max-h-[420px] border border-gray-200/80 p-3 relative">
           {isImage ? (
             <img
-              src={blobUrl || file.dataUrl || ''}
+              src={blobUrl || file.cloudUrl || file.dataUrl || ''}
               alt={file.name}
               className="max-h-[380px] max-w-full object-contain rounded-xl shadow-xs"
             />
-          ) : isVideo && blobUrl ? (
+          ) : isVideo && (blobUrl || file.cloudUrl) ? (
             <video
-              src={blobUrl}
+              src={blobUrl || file.cloudUrl}
               controls
               autoPlay={false}
               className="max-h-[380px] max-w-full rounded-xl shadow-xs"
             />
-          ) : isAudio && blobUrl ? (
+          ) : isAudio && (blobUrl || file.cloudUrl) ? (
             <div className="w-full max-w-md p-6 bg-white rounded-2xl shadow-xs border border-gray-200 text-center">
               <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mb-4">
                 {getFileIcon(file.mimeType, file.fileExtension)}
               </div>
               <p className="text-xs font-bold text-gray-900 mb-3">{file.name}</p>
-              <audio src={blobUrl} controls className="w-full" />
+              <audio src={blobUrl || file.cloudUrl} controls className="w-full" />
             </div>
           ) : isText ? (
             <div className="w-full h-full max-h-[380px] bg-white rounded-xl border border-gray-200 p-4 font-mono text-xs text-gray-800 overflow-y-auto relative text-left">
@@ -202,7 +204,20 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({
 
           <div>
             <span className="text-[10px] text-gray-400 block">Status</span>
-            <span className="font-bold text-emerald-600">Saved in Cloud</span>
+            {file.cloudUrl ? (
+              <a
+                href={file.cloudUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1"
+                title={file.cloudUrl}
+              >
+                <span>Catbox Cloud</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <span className="font-bold text-emerald-600">Saved in Vault</span>
+            )}
           </div>
         </div>
 

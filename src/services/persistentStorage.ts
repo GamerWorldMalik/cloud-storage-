@@ -70,6 +70,32 @@ export const readFileAsText = (file: File | Blob): Promise<string> => {
 };
 
 /**
+ * Upload file to Catbox cloud storage via server proxy
+ */
+export const uploadFileToCatboxCloud = async (file: File): Promise<string | null> => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/upload-cloud', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      console.warn('Upload cloud response status:', res.status);
+      return null;
+    }
+    const data = await res.json();
+    if (data.success && data.url) {
+      return data.url;
+    }
+    return null;
+  } catch (err) {
+    console.warn('Network error uploading to cloud storage proxy, saving locally:', err);
+    return null;
+  }
+};
+
+/**
  * Permanent Save File: Saves binary blob in IndexedDB and metadata in both IndexedDB and LocalStorage
  */
 export const savePermanentFile = async (
@@ -91,6 +117,17 @@ export const savePermanentFile = async (
     textContent = await readFileAsText(file);
   }
 
+  // Attempt real cloud upload via Catbox API proxy
+  let cloudUrl: string | undefined = undefined;
+  try {
+    const uploadedUrl = await uploadFileToCatboxCloud(file);
+    if (uploadedUrl) {
+      cloudUrl = uploadedUrl;
+    }
+  } catch (e) {
+    console.warn('Cloud upload failed, proceeding with local persistence:', e);
+  }
+
   const fileRecord: CloudFile = {
     id: `file_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
     name: file.name, // Exactly preserves original file name (e.g. mojo.txt)
@@ -100,6 +137,7 @@ export const savePermanentFile = async (
     createdTime: new Date().toISOString(),
     isStarred: false,
     fileExtension: ext,
+    cloudUrl,
     dataUrl: dataUrl || undefined,
     textContent: textContent || undefined,
     userId,
@@ -220,7 +258,7 @@ export const getPermanentFileBlob = async (file: CloudFile): Promise<Blob | null
 
   try {
     const db = await openCloudDB();
-    return new Promise((resolve) => {
+    const idbBlob = await new Promise<Blob | null>((resolve) => {
       const tx = db.transaction([STORE_BLOBS], 'readonly');
       const store = tx.objectStore(STORE_BLOBS);
       const req = store.get(file.id);
@@ -229,9 +267,24 @@ export const getPermanentFileBlob = async (file: CloudFile): Promise<Blob | null
       };
       req.onerror = () => resolve(null);
     });
+    if (idbBlob) return idbBlob;
   } catch (e) {
-    return null;
+    console.warn('IDB blob read error:', e);
   }
+
+  // If not found locally, fetch from Catbox cloud URL
+  if (file.cloudUrl) {
+    try {
+      const res = await fetch(file.cloudUrl);
+      if (res.ok) {
+        return await res.blob();
+      }
+    } catch (e) {
+      console.warn('Failed to fetch blob from cloudUrl:', e);
+    }
+  }
+
+  return null;
 };
 
 /**

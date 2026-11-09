@@ -1,0 +1,67 @@
+{
+  "users": {
+    "admin_gamergigamc4": {
+      "uid": "admin_gamergigamc4",
+      "email": "gamergigamc4@gmail.com",
+      "displayName": "gamergigamc4",
+      "plan": "pack_550mb",
+      "planName": "Pro 550MB Pack",
+      "baseBytes": 268435456,
+      "bonusBytes": 53687091,
+      "purchasedBytes": 576716800,
+      "totalAllowedBytes": 898839347,
+      "usedBytes": 524288,
+      "referralCount": 1,
+      "joinedAt": "2026-11-09T14:18:08.133Z",
+      "lastActive": "2026-11-09T14:18:08.134Z"
+    },
+    "admin_cloudgamer955": {
+      "uid": "admin_cloudgamer955",
+      "email": "cloudgamer955@gmail.com",
+      "displayName": "cloudgamer955",
+      "plan": "free",
+      "planName": "Cloud Admin",
+      "baseBytes": 268435456,
+      "bonusBytes": 0,
+      "purchasedBytes": 0,
+      "totalAllowedBytes": 268435456,
+      "usedBytes": 524288,
+      "referralCount": 0,
+      "joinedAt": "2026-11-09T14:18:08.134Z",
+      "lastActive": "2026-11-09T14:18:08.134Z"
+    }
+  },
+  "referrals": [
+    {
+      "id": "ref_1794233895676_vxk5",
+      "referrerId": "admin_gamergigamc4",
+      "friendUid": "test_friend_1",
+      "friendName": "Rafiq",
+      "friendEmail": "rafiq@gmail.com",
+      "joinedAt": "2026-11-09T14:18:15.676Z",
+      "bonusBytes": 53687091
+    }
+  ],
+  "purchases": [
+    {
+      "id": "trx_1794233907851_BL97XKQ81M",
+      "userId": "admin_gamergigamc4",
+      "userEmail": "gamergigamc4@gmail.com",
+      "planId": "pack_550mb",
+      "planName": "Pro 550MB Pack",
+      "priceTaka": 50,
+      "storageBytes": 576716800,
+      "purchasedAt": "2026-11-09T14:18:27.851Z",
+      "expiresAt": "2026-12-09T14:18:27.850Z",
+      "paymentMethod": "bkash",
+      "senderPhone": "01886452109",
+      "transactionId": "BL97XKQ81M"
+    }
+  ],
+  "verifiedTrxIds": [
+    "BL97XKQ81M"
+  ],
+  "usedReferralEmails": [
+    "rafiq@gmail.com"
+  ]
+}

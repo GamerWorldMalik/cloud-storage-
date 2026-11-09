@@ -95,10 +95,13 @@ export const PublicFileViewer: React.FC<PublicFileViewerProps> = ({
   }, [fileId, lang]);
 
   const handleDownload = () => {
-    if (!file || !blobUrl) return;
+    if (!file) return;
+    const downloadSrc = blobUrl || file.cloudUrl;
+    if (!downloadSrc) return;
     const a = document.createElement('a');
-    a.href = blobUrl;
+    a.href = downloadSrc;
     a.download = file.name;
+    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -219,20 +222,20 @@ export const PublicFileViewer: React.FC<PublicFileViewerProps> = ({
           <div className="my-6 bg-gray-50 rounded-2xl border border-gray-200/80 p-4 flex items-center justify-center min-h-[260px] max-h-[460px] overflow-hidden relative">
             {isImage ? (
               <img
-                src={blobUrl || file.dataUrl || ''}
+                src={blobUrl || file.cloudUrl || file.dataUrl || ''}
                 alt={file.name}
                 className="max-h-[420px] max-w-full object-contain rounded-xl shadow-xs"
               />
-            ) : isVideo && blobUrl ? (
+            ) : isVideo && (blobUrl || file.cloudUrl) ? (
               <video
-                src={blobUrl}
+                src={blobUrl || file.cloudUrl}
                 controls
                 className="max-h-[420px] max-w-full rounded-xl shadow-xs"
               />
-            ) : isAudio && blobUrl ? (
+            ) : isAudio && (blobUrl || file.cloudUrl) ? (
               <div className="w-full max-w-md p-6 bg-white rounded-2xl border border-gray-200 text-center shadow-xs">
                 <p className="text-xs font-bold text-gray-900 mb-3">{file.name}</p>
-                <audio src={blobUrl} controls className="w-full" />
+                <audio src={blobUrl || file.cloudUrl} controls className="w-full" />
               </div>
             ) : isText ? (
               <div className="w-full h-full max-h-[420px] bg-white rounded-xl border border-gray-200 p-4 font-mono text-xs text-gray-800 overflow-y-auto text-left">

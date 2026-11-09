@@ -10,9 +10,11 @@ import {
   Globe,
   X,
   HardDrive,
-  HelpCircle
+  HelpCircle,
+  ShieldCheck
 } from 'lucide-react';
 import { GoogleSignInButton } from './GoogleSignInButton';
+import { ADMIN_AUTHORIZED_EMAILS } from './AdminControlPanelModal';
 
 interface NavbarProps {
   user: AuthUser | null;
@@ -20,6 +22,7 @@ interface NavbarProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onOpenInviteModal: () => void;
+  onOpenAdminPanel?: () => void;
   onLogin: () => void;
   onLogout: () => void;
   isLoggingIn: boolean;
@@ -33,6 +36,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   searchQuery,
   onSearchChange,
   onOpenInviteModal,
+  onOpenAdminPanel,
   onLogin,
   onLogout,
   isLoggingIn,
@@ -54,7 +58,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               CloudVault
             </span>
             <span className="text-[11px] text-gray-400 font-medium">
-              Google Drive Storage
+              Cloud Storage (Catbox API)
             </span>
           </div>
         </div>
@@ -97,6 +101,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {user ? (
             <>
+              {/* Admin Control Panel Button (Strictly for gamergigamc4@gmail.com and cloudgamer955@gmail.com) */}
+              {user.email && ADMIN_AUTHORIZED_EMAILS.includes(user.email.toLowerCase().trim()) && onOpenAdminPanel && (
+                <button
+                  onClick={onOpenAdminPanel}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-900 hover:bg-black text-amber-300 border border-amber-400/40 text-xs font-bold shadow-xs transition-all cursor-pointer"
+                  title="Super Admin Control Panel"
+                >
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  <span>{lang === 'bn' ? 'কন্ট্রোল প্যানেল' : 'Admin Panel'}</span>
+                </button>
+              )}
+
               {/* Storage Badge */}
               <button
                 onClick={onOpenInviteModal}

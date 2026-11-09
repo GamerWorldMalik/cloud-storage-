@@ -59,7 +59,7 @@ export const UpgradePlanModal: React.FC<UpgradePlanModalProps> = ({
     setTimeout(() => setCopiedNumber(false), 2000);
   };
 
-  const handleVerifyPayment = (e: React.FormEvent) => {
+  const handleVerifyPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -84,8 +84,8 @@ export const UpgradePlanModal: React.FC<UpgradePlanModalProps> = ({
 
     setIsProcessing(true);
 
-    setTimeout(() => {
-      const result = verifyAndApplyPayment(
+    try {
+      const result = await verifyAndApplyPayment(
         userId,
         selectedPlan,
         paymentMethod,
@@ -117,7 +117,10 @@ export const UpgradePlanModal: React.FC<UpgradePlanModalProps> = ({
       // Clear fields
       setSenderPhone('');
       setTransactionId('');
-    }, 700);
+    } catch (err: any) {
+      setIsProcessing(false);
+      setErrorMessage(err.message || 'Payment processing failed');
+    }
   };
 
   return (
